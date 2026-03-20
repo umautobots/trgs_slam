@@ -1,0 +1,93 @@
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
+ARG USER_ID
+ARG CUDA_ARCH
+
+# Install required apt packages and clear cache afterwards.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y --no-install-recommends \
+    sudo \
+    git \
+    ninja-build \
+    cmake \
+    curl \
+    libhdf5-dev \
+    python3.10-dev \
+    python3-pip \
+    libeigen3-dev \
+    libomp-dev \
+    build-essential \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non root user and setup environment.
+RUN useradd -l -m -d /home/user -g root -G sudo -u ${USER_ID} user
+RUN usermod -aG sudo user
+# Set user password
+RUN echo "user:user" | chpasswd
+# Ensure sudo group users are not asked for a password when using sudo command by ammending sudoers file
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Switch to new user and workdir.
+USER ${USER_ID}
+WORKDIR /home/user
+
+# Add local user binary folder to PATH variable.
+ENV PATH="${PATH}:/home/user/.local/bin"
+SHELL ["/bin/bash", "-c"]
+
+# Upgrade pip.
+RUN python3.10 -m pip install --no-cache-dir --upgrade pip
+
+# Install pytorch.
+RUN python3.10 -m pip install --no-cache-dir \
+    torch==2.7.0 \
+    torchvision==0.22.0 \
+    torchaudio==2.7.0 \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# List architectures to compile for.
+ENV TORCH_CUDA_ARCH_LIST=${CUDA_ARCH}
+
+# Install additional packages.
+RUN python3.10 -m pip install --no-cache-dir \
+    h5py>=3.15.1 \
+    pypose>=0.7.5 \
+    viser>=1.0.24 \
+    numpy>=2.2.6 \
+    opencv-python-headless>=4.13.0.92 \
+    tyro>=1.0.6 \
+    pyyaml>=6.0.3 \
+    scipy>=1.15.3 \
+    scikit-learn>=1.7.2 \
+    nerfview>=0.1.2 \
+    gsplat>=1.5.1 \
+    pybind11>=3.0.2 \
+    torchmetrics[image]>=1.9.0 \
+    evo>=1.34.3 \
+    splines>=0.3.3
+
+# Install fused SSIM.
+RUN python3.10 -m pip install --no-build-isolation \
+    git+https://github.com/rahul-goel/fused-ssim@328dc9836f513d00c4b5bc38fe30478b4435cbb5
+
+# Install lietorch.
+RUN python3.10 -m pip install --no-cache-dir --no-build-isolation \
+    git+https://github.com/princeton-vl/lietorch.git
+
+# Install lie_spline_torch.
+RUN git clone --recursive https://github.com/umautobots/lie_spline_torch.git && \
+    cd lie_spline_torch/ && \
+    python3.10 -m pip install --no-cache-dir .
+
+# Install TRGS-SLAM.
+COPY . /home/user/trgs_slam
+USER root
+RUN chown -R user /home/user/trgs_slam
+USER ${USER_ID}
+RUN cd trgs_slam/ && \
+    python3.10 -m pip install --no-cache-dir -e .
+
+# Bash as default entrypoint.
+CMD /bin/bash -l

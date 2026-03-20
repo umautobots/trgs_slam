@@ -1,0 +1,144 @@
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
+ARG USER_ID
+
+# Install required apt packages and clear cache afterwards.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y --no-install-recommends \
+    sudo \
+    git \
+    cmake \
+    ninja-build \
+    build-essential \
+    libboost-program-options-dev \
+    libboost-graph-dev \
+    libboost-system-dev \
+    libeigen3-dev \
+    libfreeimage-dev \
+    libmetis-dev \
+    libgoogle-glog-dev \
+    libgtest-dev \
+    libgmock-dev \
+    libsqlite3-dev \
+    libglew-dev \
+    qtbase5-dev \
+    libqt5opengl5-dev \
+    libcgal-dev \
+    libceres-dev \
+    libcurl4-openssl-dev \
+    libmkl-full-dev \
+    python3.10-dev \
+    python3-pip \
+    libhdf5-dev \
+    wget \
+    libflann-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Update CMake
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.30.1/cmake-3.30.1.tar.gz && \
+    tar xfvz cmake-3.30.1.tar.gz && cd cmake-3.30.1 && \
+    ./bootstrap && make -j$(nproc) && make install
+
+# Install cuDSS
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i cuda-keyring_1.1-1_all.deb && \
+    apt-get update && \
+    apt-get -y install cudss-cuda-12
+
+# Install Ceres
+RUN git clone https://github.com/ceres-solver/ceres-solver && \
+    cd ceres-solver && \
+    git checkout 46b4b3b002994ddb9d6fc72268c3e271243cd1df && \
+    git submodule update --init --recursive && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_BENCHMARKS=OFF \
+        -DBUILD_TESTING=OFF \
+        -DUSE_CUDA=ON && \
+    make -j && \
+    make install
+
+# Install COLMAP
+RUN git clone https://github.com/colmap/colmap.git && \
+    cd colmap/ && \
+    git checkout 51f9c6d72e6b868935f1c1c91a1d5dfdc81f66aa && \
+    mkdir build && \
+    cd build && \
+    cmake .. -GNinja && \
+    ninja && ninja install
+
+# Install GLOMAP
+RUN git clone https://github.com/colmap/glomap.git && \
+    cd glomap/ && \
+    git checkout 4f475de4813f572926980bd2a433b44f05a95bcf && \
+    mkdir build && \
+    cd build && \
+    cmake .. -GNinja && \
+    ninja && ninja install
+
+# Create non root user and setup environment.
+RUN useradd -l -m -d /home/user -g root -G sudo -u ${USER_ID} user
+RUN usermod -aG sudo user
+# Set user password
+RUN echo "user:user" | chpasswd
+# Ensure sudo group users are not asked for a password when using sudo command by ammending sudoers file
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Switch to new user and workdir.
+USER ${USER_ID}
+WORKDIR /home/user
+
+# Add local user binary folder to PATH variable.
+ENV PATH="${PATH}:/home/user/.local/bin"
+SHELL ["/bin/bash", "-c"]
+
+# Upgrade pip
+RUN python3.10 -m pip install --no-cache-dir --upgrade pip
+
+# Install pytorch.
+RUN python3.10 -m pip install --no-cache-dir \
+    torch==2.7.0 \
+    torchvision==0.22.0 \
+    torchaudio==2.7.0 \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# Install older version of pycolmap (matching that used in the TRNeRF dockerfile).
+RUN python3.10 -m pip install --no-cache-dir \
+    pycolmap==0.4.0
+
+# Install older version of HLOC (matching that used in the TRNeRF dockerfile).
+RUN git clone --branch master https://github.com/cvg/Hierarchical-Localization.git && \
+    cd Hierarchical-Localization && \
+    git checkout v1.4 && \
+    git submodule update --init --recursive && \
+    python3.10 -m pip install --no-cache-dir -e . && \
+    cd ..
+
+# Install additional packages
+RUN python3.10 -m pip install --no-cache-dir \
+    h5py \
+    tqdm \
+    opencv-python-headless==4.10.0.82 \
+    pyyaml
+
+# Clone TRNeRF and install trnerf_utils.
+RUN git clone https://github.com/umautobots/trnerf.git && \
+    cd trnerf/trnerf_utils/ && \
+    python3.10 -m pip install --no-cache-dir .
+
+# Downgrade numpy for older version of HLOC
+RUN python3.10 -m pip install --no-cache-dir \
+    numpy==1.26.4
+
+# Copy utility functions from COLMAP into dataset_prep folder
+RUN cp /colmap/scripts/python/read_write_model.py /home/user/trnerf/dataset_prep/
+
+# Copy in TRGS-SLAM.
+COPY . /home/user/trgs_slam
+USER root
+RUN chown -R user /home/user/trgs_slam
+USER ${USER_ID}
+
+# Bash as default entrypoint.
+CMD /bin/bash -l
