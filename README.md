@@ -194,4 +194,11 @@ Also, as mentioned in our paper, we rescale 16-bit thermal images using fixed th
 
 ## Citation
 
-TODO
+```
+@misc{trgs_slam_2026,
+    title={{TRGS-SLAM}: {IMU}-Aided {Gaussian} Splatting {SLAM} for Blurry, Rolling Shutter, and Noisy Thermal Images},
+    author={Spencer Carmichael and Katherine A. Skinner},
+    year={2026},
+    note={arXiv:2603.20443}
+}
+```
