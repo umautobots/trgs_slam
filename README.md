@@ -1,7 +1,7 @@
 # TRGS-SLAM
 
 Implementation of TRGS-SLAM \
-[[project page](https://umautobots.github.io/trgs_slam)] [[paper (arXiv)](TODO)]
+[[project page](https://umautobots.github.io/trgs_slam)] [[paper (arXiv)](https://arxiv.org/abs/2603.20443)]
 
 > **Note: Our implementation of $\mathbb{R}^d$ and $\mathrm{SO}(3)$ B-splines in PyTorch is provided as a [standalone package](https://github.com/umautobots/lie_spline_torch).**
 
